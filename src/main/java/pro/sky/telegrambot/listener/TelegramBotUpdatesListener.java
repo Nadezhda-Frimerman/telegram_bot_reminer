@@ -43,17 +43,21 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
             logger.info("Processing update: {}", update);
             String text = update.message().text();
             Long chatId = update.message().chat().id();
+
             if (text.equals("/start")) {
                 SendResponse response = telegramBot.execute(new SendMessage(chatId, "Привет!"));
             }
             if (checkPattern(text)) {
                 NotificationTask notificationTask = createNotificationTask(chatId, text);
-                notificationTaskRepository.save(notificationTask);
-                SendResponse response = telegramBot.execute(new SendMessage(chatId, "Принято!"));
-
+                if (!notificationTask.getDateTime().isBefore(LocalDateTime.now())) {
+                    SendResponse response = telegramBot.execute(new SendMessage(chatId, "Принято!"));
+                    notificationTaskRepository.save(notificationTask);
+                } else {
+                    SendResponse response = telegramBot.execute(new SendMessage(chatId, "Время прошло. Напиши корректное время и дату."));
+                }
             } else {
-                SendResponse response = telegramBot.execute(new SendMessage(chatId, "Напишите напоминание в формате 01.01.2022 20:00 текст."));
-            }
+                SendResponse response = telegramBot.execute(new SendMessage(chatId, "Напишит напоминание в формате 01.01.2022 20:00 текст."));
+            };
         });
         return UpdatesListener.CONFIRMED_UPDATES_ALL;
     }
@@ -75,9 +79,6 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
         String time = matcher.group(1);
         System.out.println();
         LocalDateTime dateTime = LocalDateTime.parse(time, DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"));
-//        if (dateTime.isBefore(LocalDateTime.now())) {
-//            throw new IllegalArgumentException("Дата и время прошло");
-//        }
         String text = matcher.group(3);
         return new NotificationTask(chatId, text, dateTime);
 
