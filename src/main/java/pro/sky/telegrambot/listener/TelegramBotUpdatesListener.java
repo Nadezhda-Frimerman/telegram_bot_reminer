@@ -45,7 +45,6 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
             logger.info("Processing update: {}", update);
             String text = update.message().text();
             Long chatId = update.message().chat().id();
-
             if (text.equals("/start")) {
                 SendResponse response = telegramBot.execute(new SendMessage(chatId, "Привет!"));
             }
