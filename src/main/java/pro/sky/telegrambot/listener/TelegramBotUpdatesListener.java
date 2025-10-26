@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import pro.sky.telegrambot.entity.NotificationTask;
 import pro.sky.telegrambot.repository.NotificationTaskRepository;
+import pro.sky.telegrambot.service.MessageService;
 
 import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
@@ -25,13 +26,12 @@ import java.util.regex.Pattern;
 public class TelegramBotUpdatesListener implements UpdatesListener {
 
     private Logger logger = LoggerFactory.getLogger(TelegramBotUpdatesListener.class);
-    private final NotificationTaskRepository notificationTaskRepository;
+    private final MessageService messageService;
+    private final TelegramBot telegramBot;
 
-    @Autowired
-    private TelegramBot telegramBot;
-
-    public TelegramBotUpdatesListener(NotificationTaskRepository notificationTaskRepository) {
-        this.notificationTaskRepository = notificationTaskRepository;
+    public TelegramBotUpdatesListener(MessageService messageService, TelegramBot telegramBot) {
+        this.messageService = messageService;
+        this.telegramBot = telegramBot;
     }
 
     @PostConstruct
@@ -45,52 +45,14 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
             logger.info("Processing update: {}", update);
             String text = update.message().text();
             Long chatId = update.message().chat().id();
-            if (text.equals("/start")) {
-                SendResponse response = telegramBot.execute(new SendMessage(chatId, "Привет!"));
-            }
-            if (checkPattern(text)) {
-                NotificationTask notificationTask = createNotificationTask(chatId, text);
-                if (!notificationTask.getDateTime().isBefore(LocalDateTime.now())) {
-                    SendResponse response = telegramBot.execute(new SendMessage(chatId, "Принято!"));
-                    notificationTaskRepository.save(notificationTask);
-                } else {
-                    SendResponse response = telegramBot.execute(new SendMessage(chatId, "Время прошло. Напиши корректное время и дату."));
-                }
-            } else {
-                SendResponse response = telegramBot.execute(new SendMessage(chatId, "Напиши напоминание в формате 01.01.2022 20:00 текст."));
-            };
+            telegramBot.execute(messageService.createMessage(text, chatId));
         });
         return UpdatesListener.CONFIRMED_UPDATES_ALL;
     }
 
-    public static boolean checkPattern(String input) {
-        String regex = "(\\d{2}\\.\\d{2}\\.\\d{4}\\s\\d{2}:\\d{2})(\\s+)(.+)";
-        Pattern pattern = Pattern.compile(regex);
-        Matcher matcher = pattern.matcher(input);
-        return matcher.find();
-    }
-
-    public static NotificationTask createNotificationTask(Long chatId, String input) {
-        String regex = "(\\d{2}\\.\\d{2}\\.\\d{4}\\s\\d{2}:\\d{2})(\\s+)(.+)";
-        Pattern pattern = Pattern.compile(regex);
-        Matcher matcher = pattern.matcher(input);
-        if (!matcher.find()) {
-            throw new IllegalArgumentException("Входная строка не соответствует формату");
-        }
-        String time = matcher.group(1);
-        System.out.println();
-        LocalDateTime dateTime = LocalDateTime.parse(time, DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"));
-        String text = matcher.group(3);
-        return new NotificationTask(chatId, text, dateTime);
-
-    }
     @Scheduled (fixedDelay = 60_000L)
     public void run (){
-        LocalDateTime dateTimeNow = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES);
-        List<NotificationTask> tasks = notificationTaskRepository.findAllNotificationTaskByTime(dateTimeNow);
-        tasks.forEach(task->{
-            SendResponse response = telegramBot.execute(new SendMessage(task.getChatId(), task.getText()));
-        });
-
+        List<SendMessage> reminders = messageService.getReminders();
+        reminders.forEach(telegramBot::execute);
     }
 }
